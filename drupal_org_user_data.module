@@ -1,0 +1,78 @@
+<?php
+// @file allow for harvesting relevent data from drupal.org to show impact
+
+define('DRUPAL_ORG_USER_PATH', 'http://drupal.org/u/');
+
+/**
+ * Implements hook_block_info().
+ */
+function drupal_org_user_data_block_info() {
+  // This example comes from node.module.
+  $blocks['drupal_org_impact'] = array(
+    'info' => t('D.o impact data'),
+    'cache' => DRUPAL_CACHE_GLOBAL,
+  );
+
+  return $blocks;
+}
+
+/**
+ * Implements hook_block_view().
+ */
+function drupal_org_user_data_block_view($delta = '') {
+  $block = array();
+
+  switch ($delta) {
+    case 'drupal_org_impact':
+      $block['subject'] = t('d.o. impact');
+      $data = drupal_json_decode(_drupal_org_user_data_json());
+      dpm($data);
+      //$block['content'] = $data;//theme('table', $data);
+      break;
+  }
+  return $block;
+}
+
+/**
+ * Query d.o. for user data and return a
+ * @return [type] [description]
+ */
+function _drupal_org_user_data_json($name = NULL) {
+  if (empty($name)) {
+    $name = $GLOBALS['user']->name;
+  }
+  // ensure we got a real name
+  if (empty($name)) {
+    return drupal_json_encode(array('response' => 'no user loaded'));
+  }
+  // hit d.o. for data
+  $response = drupal_http_request(DRUPAL_ORG_USER_PATH . $name);
+  if (!isset($response->error)) {
+    // step down to the part that has their projects
+    // Create a DOM object.
+    $html_obj = new simple_html_dom();
+    // Load HTML from a string.
+    $html_obj->load($response->data);
+    // Remove all plain text fragments.
+    $projects = array();
+    foreach ($html_obj->find('dd ul li') as $plain_text_obj ) {
+      $tmp = $plain_text_obj->outertext;
+      $split = explode('(', $tmp);
+      $commits = explode(' ', $split[1]);
+      $projects[] = array(
+        'href' => $plain_text_obj->children(0)->href,
+        'name' => $plain_text_obj->children(0)->innertext,
+        'commits' => $commits[0],
+      );
+    }
+    // Display the results.
+    //echo $html_obj;
+    // Release resources to avoid memory leak in some versions.
+    $html_obj->clear();
+    unset($html_obj);
+    return drupal_json_encode($projects);
+  }
+  else {
+    return drupal_json_encode(array('response' => 'd.o. user does not exist'));
+  }
+}

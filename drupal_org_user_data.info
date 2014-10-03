@@ -1,0 +1,4 @@
+name = "Drupal.org User Data"
+description = "Harvest data when passed a user name"
+core = "7.x"
+dependencies[] = simplehtmldom
