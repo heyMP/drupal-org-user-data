@@ -2,13 +2,49 @@
 // @file allow for harvesting relevent data from drupal.org to show impact
 
 define('DRUPAL_ORG_USER_PATH', 'http://drupal.org/u/');
+define('DRUPAL_ORG_MAX_PER_BUILD', 5);
 
 /**
  * Implements hook_cron().
  */
 function drupal_org_user_data_cron() {
   // @todo we need to cache these requests cause they can take awhile
-  cache_clear_all('*', 'drupal_org_user_data');
+  cache_clear_all('*', 'cache_drupal_org_user_data');
+}
+
+/**
+ * Implements hook_flush_caches().
+ */
+function drupal_org_user_data_flush_caches() {
+  return array('cache_drupal_org_user_data');
+}
+
+/**
+ * Implements hook_permission().
+ */
+function drupal_org_user_data_permission() {
+  return array(
+    'access d.o. user data' =>  array(
+      'title' => t('Access d.o. User data'),
+      'description' => t('provides access to the data on path /drupal_org_user_data'),
+    ),
+  );
+}
+
+/**
+ * Implements hook_menu().
+ */
+function drupal_org_user_data_menu() {
+  $items['drupal_org_user_data'] = array(
+    'title' => 'Drupal.org User data as a page',
+    'page callback' => 'drupal_org_user_data_endpoint',
+    'page arguments' => array(1,2),
+    'access arguments' => array('access d.o. user data'),
+    'type' => MENU_CALLBACK,
+    'file' => 'drupal_org_user_data.pages.inc',
+  );
+
+  return $items;
 }
 
 /**
@@ -20,7 +56,6 @@ function drupal_org_user_data_block_info() {
     'info' => t('D.o impact data'),
     'cache' => DRUPAL_NO_CACHE,
   );
-
   return $blocks;
 }
 
@@ -31,29 +66,45 @@ function drupal_org_user_data_block_view($delta = '') {
   $block = array();
   switch ($delta) {
     case 'drupal_org_impact':
-      $block['subject'] = t('d.o. impact');
-      $data = drupal_json_decode(_drupal_org_user_project_data_json());
-      // @todo move this stuff to a page of some kind
-      //$header = array("project", "href", "name", "commits", "installs", "downloads");
-      $header = array("downloads", "installs", "commits");
-      dpm($data);
-      $overview = array(0, 0, 0);
-      foreach ($data as $row) {
-        $overview[0] += (int) $row['downloads'];
-        $overview[1] += (int) $row['installs'];
-        $overview[2] += (int) $row['commits'];
+      if (arg(0) != 'drupal_org_user_data') {
+        $block['subject'] = t('d.o. impact');
+        $extra = array();
+        $data = _drupal_org_user_project_data(NULL, $extra);
+        $block['content'] = _drupal_org_user_data_overview($data, $extra);
       }
-      $block['content'] = theme('table', array('header' => $header, 'rows' => $overview));
-      break;
+    break;
   }
   return $block;
+}
+
+/**
+ * return an overview of the data we recieved
+ * @param  [type] $data [description]
+ * @return [type]       [description]
+ */
+function _drupal_org_user_data_overview($data, $extra) {
+  $header = array("projects", "downloads", "installs", "commits");
+  $overview = array(0, 0, 0, 0);
+  foreach ($data as $row) {
+    $overview[0]++;
+    $overview[1] += (int) $row['downloads'];
+    $overview[2] += (int) $row['installs'];
+    $overview[3] += (int) $row['commits'];
+  }
+  $content = theme('table', array('header' => $header, 'rows' => array($overview)));
+  // alert that data still needs rebuilt
+  if (count($data) != $extra['total']) {
+    $content .= t('@remain projects still need their data rebuilt. Refresh the page for updated totals.', array('@remain' => $extra['total'] - count($data)));
+  }
+
+  return $content;
 }
 
 /**
  * Query d.o. for user data and return a
  * @return json a json representation of project data from d.o. based on user
  */
-function _drupal_org_user_project_data_json($name = NULL) {
+function _drupal_org_user_project_data($name = NULL, &$extra = array()) {
   // limit the number of items that are processed at once
 
   if (empty($name)) {
@@ -61,11 +112,11 @@ function _drupal_org_user_project_data_json($name = NULL) {
   }
   // ensure we got a real name
   if (empty($name)) {
-    return drupal_json_encode(array('response' => 'no user loaded'));
+    return array('response' => 'no user loaded');
   }
   // hit d.o. for data
   $response = _drupal_org_user_data_request(DRUPAL_ORG_USER_PATH . $name);
-  if (!isset($response->error)) {
+  if (isset($response->data)) {
     // step down to the part that has their projects
     // Create a DOM object.
     $html_obj = new simple_html_dom();
@@ -74,38 +125,50 @@ function _drupal_org_user_project_data_json($name = NULL) {
     // Remove all plain text fragments.
     $projects = array();
     $count = 0;
-    foreach ($html_obj->find('dd ul li') as $plain_text_obj ) {
+    $extra['total'] = count($html_obj->find('dd ul li'));
+    foreach ($html_obj->find('dd ul li') as $plain_text_obj) {
       $tmp = $plain_text_obj->outertext;
       $split = explode('(', $tmp);
       $commits = explode(' ', $split[1]);
-      $href = 'http://drupal.org' . $plain_text_obj->children(0)->href;
-      $key = str_replace('http://drupal.org/project/', '', $href);
-      $projects[$key] = array(
-        'project' => $key,
-        'href' => $href,
-        'name' => $plain_text_obj->children(0)->innertext,
-        'commits' => $commits[0],
-      );
-      // scan deeper
-      $html_obj2 = new simple_html_dom();
-      // Load HTML from a string.
-      $response2 = _drupal_org_user_data_request($href);
-      $html_obj2->load($response2->data);
-      foreach ($html_obj2->find('div[class="project-info item-list"] ul li') as $plain_text_obj2 ) {
-        if (strpos($plain_text_obj2->innertext, 'Reported installs:') === 0) {
-          $projects[$key]['installs'] = $plain_text_obj2->children[0]->innertext;
+      if (!empty($plain_text_obj->children(0)->innertext)) {
+        $href = 'http://drupal.org' . $plain_text_obj->children(0)->href;
+        $key = str_replace('http://drupal.org/project/', '', $href);
+        $projects[$key] = array(
+          'name' => $plain_text_obj->children(0)->innertext,
+          'project' => $key,
+          'href' => $href,
+          'commits' => $commits[0],
+          'downloads' => '',
+          'installs' => '',
+        );
+        // scan deeper
+        $html_obj2 = new simple_html_dom();
+        // Load HTML from a string.
+        $cached = FALSE;
+        $response2 = _drupal_org_user_data_request($href, array(), $cached);
+        $html_obj2->load($response2->data);
+        foreach ($html_obj2->find('div[class="project-info item-list"] ul li') as $plain_text_obj2 ) {
+          if (strpos($plain_text_obj2->innertext, 'Reported installs:') === 0) {
+            $projects[$key]['installs'] = $plain_text_obj2->children[0]->innertext;
+          }
+          if (strpos($plain_text_obj2->innertext, 'Downloads:') === 0) {
+            $projects[$key]['downloads'] = str_replace('Downloads: ', '', $plain_text_obj2->innertext);
+          }
         }
-        if (strpos($plain_text_obj2->innertext, 'Downloads:') === 0) {
-          $projects[$key]['downloads'] = str_replace('Downloads: ', '', $plain_text_obj2->innertext);
+        $html_obj2->clear();
+        unset($html_obj2);
+        // this helps prevent MASSIVE performance headaches for large
+        // amounts of projects for the user. we only do a max of 10 calls
+        // that ARE NOT cached. Meaning the results will build up more
+        // and more as we cache previous calls successfully :)
+        if (!$cached) {
+          $count++;
         }
-      }
-      $html_obj2->clear();
-      unset($html_obj2);
-      $count++;
-      if ($count == 20) {
-        $html_obj->clear();
-        unset($html_obj);
-        return drupal_json_encode($projects);
+        if ($count == DRUPAL_ORG_MAX_PER_BUILD) {
+          $html_obj->clear();
+          unset($html_obj);
+          return $projects;
+        }
       }
     }
     // Display the results.
@@ -113,10 +176,10 @@ function _drupal_org_user_project_data_json($name = NULL) {
     // Release resources to avoid memory leak in some versions.
     $html_obj->clear();
     unset($html_obj);
-    return drupal_json_encode($projects);
+    return $projects;
   }
   else {
-    return drupal_json_encode(array('response' => 'd.o. user does not exist'));
+    return array('response' => 'd.o. user does not exist');
   }
 }
 
@@ -129,7 +192,7 @@ function _drupal_org_user_project_data_json($name = NULL) {
  * @param  array   $options httprl options to pass in
  * @return string           whatever the response was, most likely text
  */
-function _drupal_org_user_data_request($url, $options = array()) {
+function _drupal_org_user_data_request($url, $options = array(), &$cached = FALSE) {
   $data = FALSE;
   // trick to mash request into a single item
   $args = func_get_args();
@@ -152,6 +215,7 @@ function _drupal_org_user_data_request($url, $options = array()) {
     // @ignore druplart_conditional_assignment
     if ($cache = cache_get($cid, 'cache_drupal_org_user_data')) {
       $data = $cache;
+      $cached = TRUE;
     }
     else {
       // queue request
@@ -162,6 +226,9 @@ function _drupal_org_user_data_request($url, $options = array()) {
       cache_set($cid, $data->data, 'cache_drupal_org_user_data');
     }
   }
+  else {
+    $cached = TRUE;
+  }
   /*
   // debug all calls
   // @ignore production_code
@@ -171,6 +238,123 @@ function _drupal_org_user_data_request($url, $options = array()) {
   // @ignore production_code
   }
   */
-
   return $data;
+}
+
+/**
+ * Helper function to export to a certain format.
+ *
+ * @return array encoded contents for export.
+ */
+function _drupal_org_user_data_encode($contents, $format = 'json') {
+  switch ($format) {
+    case 'json':
+      return _drupal_org_user_data_pretty_json(drupal_json_encode($contents));
+    break;
+    case 'yaml':
+      if (function_exists('yaml_emit')) {
+        return yaml_emit($contents);
+      }
+    break;
+    case 'xml':
+      $xml = new SimpleXMLElement('<drupal_org_user_data/>');
+      _drupal_org_user_data_array_to_xml($contents, $xml);
+      return $xml->asXML();
+    break;
+  }
+}
+
+/**
+ * Print json nicely regardless of PHP version
+ */
+function _drupal_org_user_data_pretty_json($json) {
+  $result = '';
+  $level = 0;
+  $in_quotes = false;
+  $in_escape = false;
+  $ends_line_level = NULL;
+  $json_length = strlen($json);
+  for ($i = 0; $i < $json_length; $i++) {
+    $char = $json[$i];
+    $new_line_level = NULL;
+    $post = "";
+    if ($ends_line_level !== NULL) {
+      $new_line_level = $ends_line_level;
+      $ends_line_level = NULL;
+    }
+    if ($in_escape) {
+      $in_escape = false;
+    }
+    else if ($char === '"') {
+      $in_quotes = !$in_quotes;
+    }
+    else if (!$in_quotes) {
+      switch ($char) {
+        case '}':
+        case ']':
+          $level--;
+          $ends_line_level = NULL;
+          $new_line_level = $level;
+        break;
+
+        case '{':
+        case '[':
+          $level++;
+        case ',':
+          $ends_line_level = $level;
+        break;
+
+        case ':':
+          $post = " ";
+        break;
+
+        case " ":
+        case "\t":
+        case "\n":
+        case "\r":
+          $char = "";
+          $ends_line_level = $new_line_level;
+          $new_line_level = NULL;
+        break;
+      }
+    }
+    else if ($char === '\\') {
+      $in_escape = true;
+    }
+
+    if ($new_line_level !== NULL) {
+        $result .= "\n".str_repeat("\t", $new_line_level);
+    }
+    $result .= $char . $post;
+  }
+
+  return $result;
+}
+
+/**
+ * Helper function to convert array to XML
+ * @param  array $array any old array
+ * @param  object $xml   SimpleXMLElement object type
+ * @return object        returns a populated XML object with values from array
+ */
+function _drupal_org_user_data_array_to_xml($array, &$xml) {
+  foreach($array as $key => $value) {
+    if(is_array($value)) {
+      if(!is_numeric($key)){
+        $subnode = $xml->addChild("$key");
+        _drupal_org_user_data_array_to_xml($value, $subnode);
+      }
+      else {
+        _drupal_org_user_data_array_to_xml($value, $xml);
+      }
+    }
+    else {
+      if(!is_numeric($key)){
+        $xml->addChild("$key","$value");
+      }
+      else {
+        $xml->addChild("num$key","$value");
+      }
+    }
+  }
 }
