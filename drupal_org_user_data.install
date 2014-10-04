@@ -1,0 +1,13 @@
+<?php
+/**
+ * @file
+ * Install the drupal_org_user_data cache table.
+ */
+
+/**
+ * Implements hook_schema().
+ */
+function drupal_org_user_data_schema() {
+  $schema['cache_drupal_org_user_data'] = drupal_get_schema_unprocessed('system', 'cache');
+  return $schema;
+}

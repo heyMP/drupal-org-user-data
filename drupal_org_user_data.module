@@ -7,8 +7,8 @@ define('DRUPAL_ORG_USER_PATH', 'http://drupal.org/u/');
  * Implements hook_cron().
  */
 function drupal_org_user_data_cron() {
-// @todo we need to cache these requests cause they can take awhile
-
+  // @todo we need to cache these requests cause they can take awhile
+  cache_clear_all('*', 'drupal_org_user_data');
 }
 
 /**
@@ -18,7 +18,7 @@ function drupal_org_user_data_block_info() {
   // This example comes from node.module.
   $blocks['drupal_org_impact'] = array(
     'info' => t('D.o impact data'),
-    'cache' => DRUPAL_CACHE_GLOBAL,
+    'cache' => DRUPAL_NO_CACHE,
   );
 
   return $blocks;
@@ -35,14 +35,15 @@ function drupal_org_user_data_block_view($delta = '') {
       $data = drupal_json_decode(_drupal_org_user_project_data_json());
       // @todo move this stuff to a page of some kind
       //$header = array("project", "href", "name", "commits", "installs", "downloads");
-      //dpm($data);
-      $row = array(0, 0, 0);
+      $header = array("downloads", "installs", "commits");
+      dpm($data);
+      $overview = array(0, 0, 0);
       foreach ($data as $row) {
-        $row[0] += (int) $row['downloads'];
-        $row[1] += (int) $row['installs'];
-        $row[2] += (int) $row['commits'];
+        $overview[0] += (int) $row['downloads'];
+        $overview[1] += (int) $row['installs'];
+        $overview[2] += (int) $row['commits'];
       }
-      $block['content'] = theme('table', array('header' => $header, 'rows' => $row));
+      $block['content'] = theme('table', array('header' => $header, 'rows' => $overview));
       break;
   }
   return $block;
@@ -50,7 +51,7 @@ function drupal_org_user_data_block_view($delta = '') {
 
 /**
  * Query d.o. for user data and return a
- * @return [type] [description]
+ * @return json a json representation of project data from d.o. based on user
  */
 function _drupal_org_user_project_data_json($name = NULL) {
   // limit the number of items that are processed at once
@@ -63,7 +64,7 @@ function _drupal_org_user_project_data_json($name = NULL) {
     return drupal_json_encode(array('response' => 'no user loaded'));
   }
   // hit d.o. for data
-  $response = drupal_http_request(DRUPAL_ORG_USER_PATH . $name);
+  $response = _drupal_org_user_data_request(DRUPAL_ORG_USER_PATH . $name);
   if (!isset($response->error)) {
     // step down to the part that has their projects
     // Create a DOM object.
@@ -88,7 +89,7 @@ function _drupal_org_user_project_data_json($name = NULL) {
       // scan deeper
       $html_obj2 = new simple_html_dom();
       // Load HTML from a string.
-      $response2 = drupal_http_request($href);
+      $response2 = _drupal_org_user_data_request($href);
       $html_obj2->load($response2->data);
       foreach ($html_obj2->find('div[class="project-info item-list"] ul li') as $plain_text_obj2 ) {
         if (strpos($plain_text_obj2->innertext, 'Reported installs:') === 0) {
@@ -101,7 +102,7 @@ function _drupal_org_user_project_data_json($name = NULL) {
       $html_obj2->clear();
       unset($html_obj2);
       $count++;
-      if ($count == 10) {
+      if ($count == 20) {
         $html_obj->clear();
         unset($html_obj);
         return drupal_json_encode($projects);
@@ -117,4 +118,59 @@ function _drupal_org_user_project_data_json($name = NULL) {
   else {
     return drupal_json_encode(array('response' => 'd.o. user does not exist'));
   }
+}
+
+/**
+ * Call wrapper to utilize http response caching to avoid massive pings
+ * when we really don't need them. This build ontop of httprl and is taken
+ * originally from work on _cis_connector_request.
+ *
+ * @param  string  $url     the address you want to request
+ * @param  array   $options httprl options to pass in
+ * @return string           whatever the response was, most likely text
+ */
+function _drupal_org_user_data_request($url, $options = array()) {
+  $data = FALSE;
+  // trick to mash request into a single item
+  $args = func_get_args();
+  // options can be an array so need to implode on its own
+  if (is_array($args[1])) {
+    // headers can be a nested array
+    if (isset($args[1]['headers']) && is_array($args[1]['headers'])) {
+      $args[1]['headers'] = implode('_', $args[1]['headers']);
+    }
+    $args[1] = implode('_', $args[1]);
+  }
+  // generate a unique call signature
+  $call = __FUNCTION__ . implode('_', $args);
+  // statically cache future calls
+  $data = &drupal_static($call);
+  if (!isset($data)) {
+    // convert to something db friendly
+    $salt = drupal_get_hash_salt();
+    $cid = hash('sha512', $salt . $call);
+    // @ignore druplart_conditional_assignment
+    if ($cache = cache_get($cid, 'cache_drupal_org_user_data')) {
+      $data = $cache;
+    }
+    else {
+      // queue request
+      httprl_request($url, $options);
+      // send the request off
+      $tmp = httprl_send_request();
+      $data = array_pop($tmp);
+      cache_set($cid, $data->data, 'cache_drupal_org_user_data');
+    }
+  }
+  /*
+  // debug all calls
+  // @ignore production_code
+  if (module_exists('devel') && $GLOBALS['user']->uid == 1) {
+    // @ignore production_code
+    dpm($data);
+  // @ignore production_code
+  }
+  */
+
+  return $data;
 }
