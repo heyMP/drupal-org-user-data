@@ -2,14 +2,14 @@
 // @file allow for harvesting relevent data from drupal.org to show impact
 
 define('DRUPAL_ORG_USER_PATH', 'http://drupal.org/u/');
-define('DRUPAL_ORG_MAX_PER_BUILD', 5);
+define('DRUPAL_ORG_MAX_PER_BUILD', 3);
 
 /**
  * Implements hook_cron().
  */
 function drupal_org_user_data_cron() {
   // @todo we need to cache these requests cause they can take awhile
-  cache_clear_all('*', 'cache_drupal_org_user_data');
+  drupal_org_invalidate_cache();
 }
 
 /**
@@ -17,6 +17,14 @@ function drupal_org_user_data_cron() {
  */
 function drupal_org_user_data_flush_caches() {
   return array('cache_drupal_org_user_data');
+}
+
+/**
+ * wrapper to clean up caches
+ * @return [type] [description]
+ */
+function drupal_org_invalidate_cache() {
+  cache_clear_all('*', 'cache_drupal_org_user_data', TRUE);
 }
 
 /**
@@ -35,6 +43,8 @@ function drupal_org_user_data_permission() {
  * Implements hook_menu().
  */
 function drupal_org_user_data_menu() {
+  $path = drupal_get_path('module', 'drupal_org_user_data');
+
   $items['drupal_org_user_data'] = array(
     'title' => 'Drupal.org User data as a page',
     'page callback' => 'drupal_org_user_data_endpoint',
@@ -42,6 +52,17 @@ function drupal_org_user_data_menu() {
     'access arguments' => array('access d.o. user data'),
     'type' => MENU_CALLBACK,
     'file' => 'drupal_org_user_data.pages.inc',
+    'file path' => $path,
+  );
+  $items['admin/config/system/doud'] = array(
+    'title' => 'd.o. project data',
+    'description' => 'Drupal.org user project data',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('drupal_org_user_data_rebuild_form'),
+    'access arguments' => array('administer site configuration'),
+    'type' => MENU_NORMAL_ITEM,
+    'file' => 'drupal_org_user_data.pages.inc',
+    'file path' => $path,
   );
 
   return $items;
@@ -83,17 +104,17 @@ function drupal_org_user_data_block_view($delta = '') {
  * @return [type]       [description]
  */
 function _drupal_org_user_data_overview($data, $extra) {
-  $header = array("projects", "downloads", "installs", "commits");
+  $header = array("projects", "commits", "downloads", "installs");
   $overview = array(0, 0, 0, 0);
   foreach ($data as $row) {
     $overview[0]++;
-    $overview[1] += (int) $row['downloads'];
-    $overview[2] += (int) $row['installs'];
-    $overview[3] += (int) $row['commits'];
+    $overview[1] += str_replace(',', '', $row['commits']);
+    $overview[2] += str_replace(',', '', $row['downloads']);
+    $overview[3] += str_replace(',', '', $row['installs']);
   }
   $content = theme('table', array('header' => $header, 'rows' => array($overview)));
   // alert that data still needs rebuilt
-  if (count($data) != $extra['total']) {
+  if (isset($extra['rebuilding']) && count($data) != $extra['total']) {
     $content .= t('@remain projects still need their data rebuilt. Refresh the page for updated totals.', array('@remain' => $extra['total'] - count($data)));
   }
 
@@ -106,7 +127,6 @@ function _drupal_org_user_data_overview($data, $extra) {
  */
 function _drupal_org_user_project_data($name = NULL, &$extra = array()) {
   // limit the number of items that are processed at once
-
   if (empty($name)) {
     $name = $GLOBALS['user']->name;
   }
@@ -117,11 +137,13 @@ function _drupal_org_user_project_data($name = NULL, &$extra = array()) {
   // hit d.o. for data
   $response = _drupal_org_user_data_request(DRUPAL_ORG_USER_PATH . $name);
   if (isset($response->data)) {
+    $data = $response->data;
+    // allow for custom modifications / pruning by users implementing this
     // step down to the part that has their projects
     // Create a DOM object.
     $html_obj = new simple_html_dom();
     // Load HTML from a string.
-    $html_obj->load($response->data);
+    $html_obj->load($data);
     // Remove all plain text fragments.
     $projects = array();
     $count = 0;
@@ -138,8 +160,8 @@ function _drupal_org_user_project_data($name = NULL, &$extra = array()) {
           'project' => $key,
           'href' => $href,
           'commits' => $commits[0],
-          'downloads' => '',
-          'installs' => '',
+          'downloads' => 0,
+          'installs' => 0,
         );
         // scan deeper
         $html_obj2 = new simple_html_dom();
@@ -157,25 +179,31 @@ function _drupal_org_user_project_data($name = NULL, &$extra = array()) {
         }
         $html_obj2->clear();
         unset($html_obj2);
-        // this helps prevent MASSIVE performance headaches for large
-        // amounts of projects for the user. we only do a max of 10 calls
-        // that ARE NOT cached. Meaning the results will build up more
-        // and more as we cache previous calls successfully :)
+        // edge case, we haven't rebuilt the cache of the calls yet for the
+        // end user so their requests will rebuild it. This only happens if
+        // everything is flushed and hasn't been rebuilt yet we notify them
+        // of the reason for the performance issues by only rebuilding 3
+        // at a time, otherwise performance might be crippled.
         if (!$cached) {
           $count++;
         }
         if ($count == DRUPAL_ORG_MAX_PER_BUILD) {
+          $extra['rebuilding'] = TRUE;
           $html_obj->clear();
           unset($html_obj);
+          drupal_alter('drupal_org_user_projects', $projects, $name);
           return $projects;
         }
       }
+      else {
+        $extra['total']--;
+      }
     }
-    // Display the results.
-    //echo $html_obj;
     // Release resources to avoid memory leak in some versions.
     $html_obj->clear();
     unset($html_obj);
+    drupal_alter('drupal_org_user_projects', $projects, $name);
+    $extra['total'] = count($projects);
     return $projects;
   }
   else {
@@ -193,25 +221,13 @@ function _drupal_org_user_project_data($name = NULL, &$extra = array()) {
  * @return string           whatever the response was, most likely text
  */
 function _drupal_org_user_data_request($url, $options = array(), &$cached = FALSE) {
-  $data = FALSE;
-  // trick to mash request into a single item
-  $args = func_get_args();
-  // options can be an array so need to implode on its own
-  if (is_array($args[1])) {
-    // headers can be a nested array
-    if (isset($args[1]['headers']) && is_array($args[1]['headers'])) {
-      $args[1]['headers'] = implode('_', $args[1]['headers']);
-    }
-    $args[1] = implode('_', $args[1]);
-  }
-  // generate a unique call signature
-  $call = __FUNCTION__ . implode('_', $args);
+  $data = NULL;
+  $call = $url;
   // statically cache future calls
   $data = &drupal_static($call);
   if (!isset($data)) {
     // convert to something db friendly
-    $salt = drupal_get_hash_salt();
-    $cid = hash('sha512', $salt . $call);
+    $cid = $url;
     // @ignore druplart_conditional_assignment
     if ($cache = cache_get($cid, 'cache_drupal_org_user_data')) {
       $data = $cache;
@@ -357,4 +373,105 @@ function _drupal_org_user_data_array_to_xml($array, &$xml) {
       }
     }
   }
+}
+
+/**
+ * Batch API call to process a user based on name supplied
+ * @param  [type] $name [description]
+ * @return [type]       [description]
+ */
+function _drupal_org_load_user_data_batch($name) {
+  $batch = array(
+    'operations' => array(),
+    'finished' => '_drupal_org_user_projects_batch_finished',
+    'title' => t('Loading project data...'),
+    'init_message' => t('Preparing to request projects...'),
+    'progress_message' => t('Requesting projects...'),
+    'error_message' => t('Project request failed'),
+  );
+  // hit d.o. for data
+  $response = _drupal_org_user_data_request(DRUPAL_ORG_USER_PATH . $name);
+  if (!isset($response->error)) {
+    $data = $response->data;
+    // allow for custom modifications / pruning by users implementing this
+    // step down to the part that has their projects
+    // Create a DOM object.
+    $html_obj = new simple_html_dom();
+    // Load HTML from a string.
+    $html_obj->load($data);
+    // Remove all plain text fragments.
+    $projects = array();
+    $count = 0;
+    foreach ($html_obj->find('dd ul li') as $plain_text_obj) {
+      $tmp = $plain_text_obj->outertext;
+      $split = explode('(', $tmp);
+      $commits = explode(' ', $split[1]);
+      if (!empty($plain_text_obj->children(0)->innertext)) {
+        $href = 'http://drupal.org' . $plain_text_obj->children(0)->href;
+        $key = str_replace('http://drupal.org/project/', '', $href);
+        $projects[] = array(
+          'project' => $key,
+          'href' => $href,
+        );
+      }
+    }
+    // Release resources to avoid memory leak in some versions.
+    $html_obj->clear();
+    unset($html_obj);
+  }
+  else {
+    drupal_set_message(t('d.o. user does not exist'), 'error');
+    return FALSE;
+  }
+  drupal_alter('drupal_org_user_projects', $projects);
+  $batch['operations'][] = array(
+    '_drupal_org_user_projects_batch_process', array($projects),
+  );
+  batch_set($batch);
+}
+
+/**
+ * Batch API entity caching completion message.
+ */
+function _drupal_org_user_projects_batch_finished($success, $results, $operations) {
+  drupal_set_message(t('Succesfully pulled all project data and cached results!'), 'status');
+}
+
+/**
+ * Processes and loads cacheable information for entities into cache tables.
+ */
+function _drupal_org_user_projects_batch_process($initial_projects, &$context) {
+  if (!isset($context['sandbox']['progress'])) {
+    // Make some assumptions like entity ids must be a positive integer.
+    $context['message'] = t("Begin requests");
+    $context['sandbox']['progress'] = 0;
+    $context['sandbox']['current_id'] = 0;
+    $context['sandbox']['max'] = count($initial_projects);
+    $context['sandbox']['projects'] = $initial_projects;
+  }
+  $projects = &$context['sandbox']['projects'];
+  $key = $context['sandbox']['current_id'];
+  $context['message'] = t("Requesting project @project", array('@project' => $projects[$key]['project'] . ' ' . $projects[$key]['href']));
+   // scan deeper
+  $html_obj = new simple_html_dom();
+  // Load HTML from a string.
+  $href = $projects[$key]['href'];
+  $response = _drupal_org_user_data_request($href);
+  $context['sandbox']['current_id']++;
+  if ($context['sandbox']['current_id'] == $context['sandbox']['max']) {
+    $context['finished'] = TRUE;
+    return;
+  }
+  $context['finished'] = min($context['sandbox']['current_id'] / $context['sandbox']['max'], 1.0);
+}
+
+/**
+ * Implements hook_admin_menu_cache_info()
+ */
+function drupal_org_user_data_admin_menu_cache_info() {
+  $caches['drupal_org_user_data'] = array(
+    'title' => t('Clear d.o. user project data'),
+    'callback' => 'drupal_org_invalidate_cache',
+  );
+  return $caches;
 }

@@ -8,7 +8,15 @@
  */
 function drupal_org_user_data_endpoint($name = NULL, $format = NULL) {
   $extra = array();
-  $data = _drupal_org_user_project_data($name, $extra);
+  if (empty($name)) {
+    $name = $GLOBALS['user']->name;
+  }
+  // statically cache future calls
+  $data = &drupal_static($name);
+  print_r($data);
+  if (!isset($data)) {
+    $data = _drupal_org_user_project_data($name, $extra);
+  }
   /*
   // display d.o. aggregate json data
   // @ignore production_code
@@ -23,7 +31,8 @@ function drupal_org_user_data_endpoint($name = NULL, $format = NULL) {
     case 'xml':
     case 'yaml':
     case 'json':
-      return _drupal_org_user_data_encode($data, $format);
+      print _drupal_org_user_data_encode($data, $format);
+      drupal_exit();
     break;
     case NULL:
       $header = array("name", "project", "href", "commits", "downloads", "installs");
@@ -31,6 +40,48 @@ function drupal_org_user_data_endpoint($name = NULL, $format = NULL) {
       $output .= _drupal_org_user_data_overview($data, $extra);
     break;
   }
-
   return $output;
+}
+
+/**
+ * Page to rebuild form manually
+ * @return [type] [description]
+ */
+function drupal_org_user_data_rebuild_form() {
+  $form = array();
+  $form['username'] = array(
+    '#type' => 'textfield',
+    '#title' => t('d.o. user name'),
+    '#description' => t('This will batch request data for this user'),
+    '#required' => TRUE,
+  );
+  $form['actions']['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Get data!'),
+  );
+  return $form;
+}
+
+/**
+ * Implements hook_form_validate().
+ */
+function drupal_org_user_data_rebuild_form_validate($form, &$form_state) {
+  // hit d.o. for data
+  $name = $form_state['values']['username'];
+  cache_clear_all(DRUPAL_ORG_USER_PATH . $name, 'cache_drupal_org_user_data');
+  $response = _drupal_org_user_data_request(DRUPAL_ORG_USER_PATH . $name);
+  if (isset($response->error)) {
+    form_set_error('name', t('Drupal.org username does not exist!'));
+  }
+}
+
+
+
+/**
+ * Implementation of hook_form_submit().
+ */
+function drupal_org_user_data_rebuild_form_submit($form, $form_state) {
+  /* Your code here */
+  $name = $form_state['values']['username'];
+  _drupal_org_load_user_data_batch($name);
 }
