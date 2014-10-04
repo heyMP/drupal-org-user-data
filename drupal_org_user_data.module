@@ -32,7 +32,7 @@ function drupal_org_invalidate_cache() {
  */
 function drupal_org_user_data_permission() {
   return array(
-    'access d.o. user data' =>  array(
+    'access drupal project user data' =>  array(
       'title' => t('Access d.o. User data'),
       'description' => t('provides access to the data on path /drupal_org_user_data'),
     ),
@@ -49,7 +49,7 @@ function drupal_org_user_data_menu() {
     'title' => 'Drupal.org User data as a page',
     'page callback' => 'drupal_org_user_data_endpoint',
     'page arguments' => array(1,2),
-    'access arguments' => array('access d.o. user data'),
+    'access arguments' => array('access drupal project user data'),
     'type' => MENU_CALLBACK,
     'file' => 'drupal_org_user_data.pages.inc',
     'file path' => $path,
@@ -191,6 +191,12 @@ function _drupal_org_user_project_data($name = NULL, &$extra = array()) {
           $extra['rebuilding'] = TRUE;
           $html_obj->clear();
           unset($html_obj);
+          /* @todo we should somehow redirect to batch API if we get something
+          that isn't cached as there could be many, many more calls and we
+          don't want to bog down the request without indicating what's going on
+          $form_state = array();
+          $form_state['values']['username'] = $name;
+          drupal_form_submit('drupal_org_user_data_rebuild_form', $form_state);*/
           drupal_alter('drupal_org_user_projects', $projects, $name);
           return $projects;
         }
