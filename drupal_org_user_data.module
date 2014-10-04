@@ -2,7 +2,7 @@
 // @file allow for harvesting relevent data from drupal.org to show impact
 
 define('DRUPAL_ORG_USER_PATH', 'http://drupal.org/u/');
-define('DRUPAL_ORG_MAX_PER_BUILD', 3);
+define('DRUPAL_ORG_MAX_PER_BUILD', 10);
 
 /**
  * Implements hook_cron().
@@ -182,7 +182,7 @@ function _drupal_org_user_project_data($name = NULL, &$extra = array()) {
         // edge case, we haven't rebuilt the cache of the calls yet for the
         // end user so their requests will rebuild it. This only happens if
         // everything is flushed and hasn't been rebuilt yet we notify them
-        // of the reason for the performance issues by only rebuilding 3
+        // of the reason for the performance issues by only rebuilding a few
         // at a time, otherwise performance might be crippled.
         if (!$cached) {
           $count++;
