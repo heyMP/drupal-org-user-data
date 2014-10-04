@@ -4,6 +4,14 @@
 define('DRUPAL_ORG_USER_PATH', 'http://drupal.org/u/');
 
 /**
+ * Implements hook_cron().
+ */
+function drupal_org_user_data_cron() {
+// @todo we need to cache these requests cause they can take awhile
+
+}
+
+/**
  * Implements hook_block_info().
  */
 function drupal_org_user_data_block_info() {
@@ -21,13 +29,20 @@ function drupal_org_user_data_block_info() {
  */
 function drupal_org_user_data_block_view($delta = '') {
   $block = array();
-
   switch ($delta) {
     case 'drupal_org_impact':
       $block['subject'] = t('d.o. impact');
-      $data = drupal_json_decode(_drupal_org_user_data_json());
-      dpm($data);
-      //$block['content'] = $data;//theme('table', $data);
+      $data = drupal_json_decode(_drupal_org_user_project_data_json());
+      // @todo move this stuff to a page of some kind
+      //$header = array("project", "href", "name", "commits", "installs", "downloads");
+      //dpm($data);
+      $row = array(0, 0, 0);
+      foreach ($data as $row) {
+        $row[0] += (int) $row['downloads'];
+        $row[1] += (int) $row['installs'];
+        $row[2] += (int) $row['commits'];
+      }
+      $block['content'] = theme('table', array('header' => $header, 'rows' => $row));
       break;
   }
   return $block;
@@ -37,7 +52,9 @@ function drupal_org_user_data_block_view($delta = '') {
  * Query d.o. for user data and return a
  * @return [type] [description]
  */
-function _drupal_org_user_data_json($name = NULL) {
+function _drupal_org_user_project_data_json($name = NULL) {
+  // limit the number of items that are processed at once
+
   if (empty($name)) {
     $name = $GLOBALS['user']->name;
   }
@@ -55,15 +72,40 @@ function _drupal_org_user_data_json($name = NULL) {
     $html_obj->load($response->data);
     // Remove all plain text fragments.
     $projects = array();
+    $count = 0;
     foreach ($html_obj->find('dd ul li') as $plain_text_obj ) {
       $tmp = $plain_text_obj->outertext;
       $split = explode('(', $tmp);
       $commits = explode(' ', $split[1]);
-      $projects[] = array(
-        'href' => $plain_text_obj->children(0)->href,
+      $href = 'http://drupal.org' . $plain_text_obj->children(0)->href;
+      $key = str_replace('http://drupal.org/project/', '', $href);
+      $projects[$key] = array(
+        'project' => $key,
+        'href' => $href,
         'name' => $plain_text_obj->children(0)->innertext,
         'commits' => $commits[0],
       );
+      // scan deeper
+      $html_obj2 = new simple_html_dom();
+      // Load HTML from a string.
+      $response2 = drupal_http_request($href);
+      $html_obj2->load($response2->data);
+      foreach ($html_obj2->find('div[class="project-info item-list"] ul li') as $plain_text_obj2 ) {
+        if (strpos($plain_text_obj2->innertext, 'Reported installs:') === 0) {
+          $projects[$key]['installs'] = $plain_text_obj2->children[0]->innertext;
+        }
+        if (strpos($plain_text_obj2->innertext, 'Downloads:') === 0) {
+          $projects[$key]['downloads'] = str_replace('Downloads: ', '', $plain_text_obj2->innertext);
+        }
+      }
+      $html_obj2->clear();
+      unset($html_obj2);
+      $count++;
+      if ($count == 10) {
+        $html_obj->clear();
+        unset($html_obj);
+        return drupal_json_encode($projects);
+      }
     }
     // Display the results.
     //echo $html_obj;
