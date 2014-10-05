@@ -13,7 +13,6 @@ function drupal_org_user_data_endpoint($name = NULL, $format = NULL) {
   }
   // statically cache future calls
   $data = &drupal_static($name);
-  print_r($data);
   if (!isset($data)) {
     $data = _drupal_org_user_project_data($name, $extra);
   }
