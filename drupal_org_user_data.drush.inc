@@ -55,7 +55,12 @@ function drush_drupal_org_user_data_drupal_org_load_user_data($name) {
     return FALSE;
   }
   // clear the cache bins for these two values so they are rebuilt
-  cache_clear_all(DRUPAL_ORG_USER_PATH . $name, 'cache_drupal_org_user_data');
+  if (is_numeric($name)) {
+    cache_clear_all(DRUPAL_ORG_USER_PATH . $name, 'cache_drupal_org_user_data');
+  }
+  else {
+    cache_clear_all(DRUPAL_ORG_NAME_PATH . $name, 'cache_drupal_org_user_data');
+  }
   cache_clear_all($name . '_project_array', 'cache_drupal_org_user_data');
   // Lets try things in a batch.
   _drupal_org_load_user_data_batch($name);

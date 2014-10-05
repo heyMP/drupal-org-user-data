@@ -22,15 +22,6 @@ function drupal_org_user_data_endpoint($name = NULL, $format = NULL) {
     $downloads[$key]  = $row['downloads'];
   }
   array_multisort($downloads, SORT_DESC, SORT_NUMERIC, $data);
-  /*
-  // display d.o. aggregate json data
-  // @ignore production_code
-  if (module_exists('devel') && $GLOBALS['user']->uid == 1) {
-    // @ignore production_code
-    dpm($data);
-  // @ignore production_code
-  }
-  */
   // display it in the format requested
   switch ($format) {
     case 'xml':
@@ -41,6 +32,13 @@ function drupal_org_user_data_endpoint($name = NULL, $format = NULL) {
     break;
     case NULL:
       $output = drupal_render(drupal_get_form('drupal_org_user_data_rebuild_form'));
+      if (is_numeric($name)) {
+        $link = DRUPAL_ORG_USER_PATH . $name;
+      }
+      else {
+        $link = DRUPAL_ORG_NAME_PATH . $name;
+      }
+      $output .= l(t('Learn more about @name on d.o.', array('@name' => $name)), $link);
       $header = array("name", "project", "href", "commits", "downloads", "installs");
       // create the overview row at the footer
       $overview = array('Totals', 0, '');
@@ -58,7 +56,7 @@ function drupal_org_user_data_endpoint($name = NULL, $format = NULL) {
         $data[$key]['installs'] = array('data' => number_format($row['installs']), 'style' => 'text-align: right;');
       }
       $data[count($data)-1] = array('data' => $data[count($data)-1], 'style' => 'font-weight:bold;');
-      $output .= theme('table', array('header' => $header, 'rows' => $data, 'caption' => t('Drupal.org user project data per project')));
+      $output .= theme('table', array('header' => $header, 'rows' => $data, 'caption' => t('%name\'s Drupal.org user project data per project', array('%name' => $name))));
     break;
   }
   return $output;
@@ -72,8 +70,8 @@ function drupal_org_user_data_rebuild_form() {
   $form = array();
   $form['username'] = array(
     '#type' => 'textfield',
-    '#title' => t('d.o. user name'),
-    '#description' => t('This will batch request data for this user'),
+    '#title' => t('d.o. user'),
+    '#description' => t('This will batch request data for this user. It supports both user names and user numbers.'),
     '#required' => TRUE,
   );
   $form['actions']['submit'] = array(
@@ -89,13 +87,24 @@ function drupal_org_user_data_rebuild_form() {
 function drupal_org_user_data_rebuild_form_validate($form, &$form_state) {
   // hit d.o. for data
   $name = $form_state['values']['username'];
-  $response = _drupal_org_user_data_request(DRUPAL_ORG_USER_PATH . $name);
+  // hit d.o. for data
+  if (is_numeric($name)) {
+    $response = _drupal_org_user_data_request(DRUPAL_ORG_USER_PATH . $name);
+  }
+  else {
+    $response = _drupal_org_user_data_request(DRUPAL_ORG_NAME_PATH . $name);
+  }
   if (isset($response->error)) {
     form_set_error('name', t('Drupal.org username does not exist!'));
   }
   else {
     // user stored rendering and cached project array so it rebuilds
-    cache_clear_all(DRUPAL_ORG_USER_PATH . $name, 'cache_drupal_org_user_data');
+    if (is_numeric($name)) {
+      cache_clear_all(DRUPAL_ORG_USER_PATH . $name, 'cache_drupal_org_user_data');
+    }
+    else {
+      cache_clear_all(DRUPAL_ORG_NAME_PATH . $name, 'cache_drupal_org_user_data');
+    }
     cache_clear_all($name . '_project_array', 'cache_drupal_org_user_data');
     $form_state['redirect'] = 'drupal_org_user_data/' . $name;
   }

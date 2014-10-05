@@ -1,7 +1,9 @@
 <?php
 // @file allow for harvesting relevent data from drupal.org to show impact
 
-define('DRUPAL_ORG_USER_PATH', 'http://drupal.org/u/');
+define('DRUPAL_ORG_NAME_PATH', 'http://drupal.org/u/');
+define('DRUPAL_ORG_USER_PATH', 'http://drupal.org/user/');
+
 define('DRUPAL_ORG_MAX_PER_BUILD', 10);
 
 /**
@@ -181,7 +183,12 @@ function _drupal_org_user_project_data($name = NULL, &$extra = array()) {
     }
   }
   // hit d.o. for data
-  $response = _drupal_org_user_data_request(DRUPAL_ORG_USER_PATH . $name);
+  if (is_numeric($name)) {
+    $response = _drupal_org_user_data_request(DRUPAL_ORG_USER_PATH . $name);
+  }
+  else {
+    $response = _drupal_org_user_data_request(DRUPAL_ORG_NAME_PATH . $name);
+  }
   if (!isset($response->error)) {
     $data = $response->data;
     // allow for custom modifications / pruning by users implementing this
@@ -439,7 +446,12 @@ function _drupal_org_load_user_data_batch($name) {
     'error_message' => t('Project request failed'),
   );
   // hit d.o. for data
-  $response = _drupal_org_user_data_request(DRUPAL_ORG_USER_PATH . $name);
+  if (is_numeric($name)) {
+    $response = _drupal_org_user_data_request(DRUPAL_ORG_USER_PATH . $name);
+  }
+  else {
+    $response = _drupal_org_user_data_request(DRUPAL_ORG_NAME_PATH . $name);
+  }
   if (!isset($response->error)) {
     $data = $response->data;
     // allow for custom modifications / pruning by users implementing this
