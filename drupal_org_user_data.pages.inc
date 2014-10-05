@@ -9,7 +9,7 @@
 function drupal_org_user_data_endpoint($name = NULL, $format = NULL) {
   $extra = array();
   if (empty($name)) {
-    $name = $GLOBALS['user']->name;
+    return drupal_render(drupal_get_form('drupal_org_user_data_rebuild_form'));
   }
   // statically cache future calls
   $data = &drupal_static($name);

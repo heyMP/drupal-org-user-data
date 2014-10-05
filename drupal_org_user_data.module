@@ -132,11 +132,11 @@ function _drupal_org_user_project_data($name = NULL, &$extra = array()) {
   }
   // ensure we got a real name
   if (empty($name)) {
-    return array('response' => 'no user loaded');
+    return array();
   }
   // hit d.o. for data
   $response = _drupal_org_user_data_request(DRUPAL_ORG_USER_PATH . $name);
-  if (isset($response->data)) {
+  if (!isset($response->error)) {
     $data = $response->data;
     // allow for custom modifications / pruning by users implementing this
     // step down to the part that has their projects
@@ -213,7 +213,7 @@ function _drupal_org_user_project_data($name = NULL, &$extra = array()) {
     return $projects;
   }
   else {
-    return array('response' => 'd.o. user does not exist');
+    return array();
   }
 }
 
