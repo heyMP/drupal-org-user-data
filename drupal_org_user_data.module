@@ -134,6 +134,18 @@ function _drupal_org_user_project_data($name = NULL, &$extra = array()) {
   if (empty($name)) {
     return array();
   }
+  $cid = $name . '_project_array';
+  // statically cache future calls
+  $projects = &drupal_static($cid);
+  if (isset($projects)) {
+    return $projects;
+  }
+  else {
+    // @ignore druplart_conditional_assignment
+    if ($cache = cache_get($cid, 'cache_drupal_org_user_data')) {
+      return $cache->data;
+    }
+  }
   // hit d.o. for data
   $response = _drupal_org_user_data_request(DRUPAL_ORG_USER_PATH . $name);
   if (!isset($response->error)) {
@@ -191,12 +203,6 @@ function _drupal_org_user_project_data($name = NULL, &$extra = array()) {
           $extra['rebuilding'] = TRUE;
           $html_obj->clear();
           unset($html_obj);
-          /* @todo we should somehow redirect to batch API if we get something
-          that isn't cached as there could be many, many more calls and we
-          don't want to bog down the request without indicating what's going on
-          $form_state = array();
-          $form_state['values']['username'] = $name;
-          drupal_form_submit('drupal_org_user_data_rebuild_form', $form_state);*/
           drupal_alter('drupal_org_user_projects', $projects, $name);
           return $projects;
         }
@@ -210,6 +216,10 @@ function _drupal_org_user_project_data($name = NULL, &$extra = array()) {
     unset($html_obj);
     drupal_alter('drupal_org_user_projects', $projects, $name);
     $extra['total'] = count($projects);
+    // in this scenario we have all the project data parsed correctly
+    // in this instance we should save the resulting project array as a cached
+    // item to avoid needless further processing
+    cache_set($cid, $projects, 'cache_drupal_org_user_data');
     return $projects;
   }
   else {
@@ -228,9 +238,8 @@ function _drupal_org_user_project_data($name = NULL, &$extra = array()) {
  */
 function _drupal_org_user_data_request($url, $options = array(), &$cached = FALSE) {
   $data = NULL;
-  $call = $url;
   // statically cache future calls
-  $data = &drupal_static($call);
+  $data = &drupal_static($url);
   if (!isset($data)) {
     // convert to something db friendly
     $cid = $url;
