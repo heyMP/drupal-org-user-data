@@ -50,10 +50,40 @@ function drupal_org_user_data_menu() {
     'page callback' => 'drupal_org_user_data_endpoint',
     'page arguments' => array(1,2),
     'access arguments' => array('access drupal project user data'),
-    'type' => MENU_CALLBACK,
+    'type' => MENU_NORMAL_ITEM,
     'file' => 'drupal_org_user_data.pages.inc',
     'file path' => $path,
   );
+  $items['drupal_org_user_data/%/json'] = array(
+    'title' => 'JSON',
+    'page callback' => 'drupal_org_user_data_endpoint',
+    'page arguments' => array(1,2),
+    'access arguments' => array('access drupal project user data'),
+    'type' => MENU_LOCAL_TASK,
+    'file' => 'drupal_org_user_data.pages.inc',
+    'file path' => $path,
+  );
+  $items['drupal_org_user_data/%/xml'] = array(
+    'title' => 'XML',
+    'page callback' => 'drupal_org_user_data_endpoint',
+    'page arguments' => array(1,2),
+    'access arguments' => array('access drupal project user data'),
+    'type' => MENU_LOCAL_TASK,
+    'file' => 'drupal_org_user_data.pages.inc',
+    'file path' => $path,
+  );
+  // only add yaml link if we support yaml
+  if (function_exists('yaml_emit')) {
+    $items['drupal_org_user_data/%/yaml'] = array(
+      'title' => 'YAML',
+      'page callback' => 'drupal_org_user_data_endpoint',
+      'page arguments' => array(1,2),
+      'access arguments' => array('access drupal project user data'),
+      'type' => MENU_LOCAL_TASK,
+      'file' => 'drupal_org_user_data.pages.inc',
+      'file path' => $path,
+    );
+  }
   $items['admin/config/system/doud'] = array(
     'title' => 'd.o. project data',
     'description' => 'Drupal.org user project data',
