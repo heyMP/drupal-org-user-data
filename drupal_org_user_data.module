@@ -46,7 +46,7 @@ function drupal_org_user_data_menu() {
   $path = drupal_get_path('module', 'drupal_org_user_data');
 
   $items['drupal_org_user_data'] = array(
-    'title' => 'Drupal.org User data as a page',
+    'title' => 'Drupal.org User data look up',
     'page callback' => 'drupal_org_user_data_endpoint',
     'page arguments' => array(1,2),
     'access arguments' => array('access drupal project user data'),
