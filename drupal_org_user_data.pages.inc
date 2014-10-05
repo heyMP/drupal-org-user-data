@@ -35,8 +35,9 @@ function drupal_org_user_data_endpoint($name = NULL, $format = NULL) {
       drupal_exit();
     break;
     case NULL:
+      $output = drupal_render(drupal_get_form('drupal_org_user_data_rebuild_form'));
       $header = array("name", "project", "href", "commits", "downloads", "installs");
-      $output = theme('table', array('header' => $header, 'rows' => $data));
+      $output .= theme('table', array('header' => $header, 'rows' => $data));
       $output .= _drupal_org_user_data_overview($data, $extra);
     break;
   }
@@ -70,12 +71,11 @@ function drupal_org_user_data_rebuild_form_validate($form, &$form_state) {
   $name = $form_state['values']['username'];
   cache_clear_all(DRUPAL_ORG_USER_PATH . $name, 'cache_drupal_org_user_data');
   $response = _drupal_org_user_data_request(DRUPAL_ORG_USER_PATH . $name);
+  $form_state['redirect'] = 'drupal_org_user_data/' . $name;
   if (isset($response->error)) {
     form_set_error('name', t('Drupal.org username does not exist!'));
   }
 }
-
-
 
 /**
  * Implementation of hook_form_submit().
