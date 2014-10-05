@@ -16,6 +16,12 @@ function drupal_org_user_data_endpoint($name = NULL, $format = NULL) {
   if (!isset($data)) {
     $data = _drupal_org_user_project_data($name, $extra);
   }
+  // sort by downloads
+  $downloads = array();
+  foreach ($data as $key => $row) {
+    $downloads[$key]  = $row['downloads'];
+  }
+  array_multisort($downloads, SORT_DESC, SORT_NUMERIC, $data);
   /*
   // display d.o. aggregate json data
   // @ignore production_code
@@ -36,8 +42,23 @@ function drupal_org_user_data_endpoint($name = NULL, $format = NULL) {
     case NULL:
       $output = drupal_render(drupal_get_form('drupal_org_user_data_rebuild_form'));
       $header = array("name", "project", "href", "commits", "downloads", "installs");
-      $output .= theme('table', array('header' => $header, 'rows' => $data));
-      $output .= _drupal_org_user_data_overview($data, $extra);
+      // create the overview row at the footer
+      $overview = array('Totals', 0, '');
+      foreach ($data as $row) {
+        $overview[1]++;
+        $overview['commits'] += $row['commits'];
+        $overview['downloads'] += $row['downloads'];
+        $overview['installs'] += $row['installs'];
+      }
+      // better styling for the output for readability
+      $data[] = $overview;
+      foreach ($data as $key => $row) {
+        $data[$key]['commits'] = array('data' => number_format($row['commits']), 'style' => 'text-align: right;');
+        $data[$key]['downloads'] = array('data' => number_format($row['downloads']), 'style' => 'text-align: right;');
+        $data[$key]['installs'] = array('data' => number_format($row['installs']), 'style' => 'text-align: right;');
+      }
+      $data[count($data)-1] = array('data' => $data[count($data)-1], 'style' => 'font-weight:bold;');
+      $output .= theme('table', array('header' => $header, 'rows' => $data, 'caption' => t('Drupal.org user project data per project')));
     break;
   }
   return $output;

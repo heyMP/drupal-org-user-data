@@ -138,11 +138,15 @@ function _drupal_org_user_data_overview($data, $extra) {
   $overview = array(0, 0, 0, 0);
   foreach ($data as $row) {
     $overview[0]++;
-    $overview[1] += str_replace(',', '', $row['commits']);
-    $overview[2] += str_replace(',', '', $row['downloads']);
-    $overview[3] += str_replace(',', '', $row['installs']);
+    $overview[1] += $row['commits'];
+    $overview[2] += $row['downloads'];
+    $overview[3] += $row['installs'];
   }
-  $content = theme('table', array('header' => $header, 'rows' => array($overview)));
+  // nicer numeric formatting
+  foreach ($overview as $key => $item) {
+    $overview[$key] = number_format($overview[$key]);
+  }
+  $content = theme('table', array('header' => $header, 'rows' => array($overview), 'caption' => t('Drupal.org user project overview data')));
   // alert that data still needs rebuilt
   if (isset($extra['rebuilding']) && count($data) != $extra['total']) {
     $content .= t('@remain projects still need their data rebuilt. Refresh the page for updated totals.', array('@remain' => $extra['total'] - count($data)));
@@ -201,7 +205,7 @@ function _drupal_org_user_project_data($name = NULL, &$extra = array()) {
           'name' => $plain_text_obj->children(0)->innertext,
           'project' => $key,
           'href' => $href,
-          'commits' => $commits[0],
+          'commits' => str_replace(',', '', $commits[0]),
           'downloads' => 0,
           'installs' => 0,
         );
@@ -213,10 +217,10 @@ function _drupal_org_user_project_data($name = NULL, &$extra = array()) {
         $html_obj2->load($response2->data);
         foreach ($html_obj2->find('div[class="project-info item-list"] ul li') as $plain_text_obj2 ) {
           if (strpos($plain_text_obj2->innertext, 'Reported installs:') === 0) {
-            $projects[$key]['installs'] = $plain_text_obj2->children[0]->innertext;
+            $projects[$key]['installs'] = str_replace(',', '', $plain_text_obj2->children[0]->innertext);
           }
           if (strpos($plain_text_obj2->innertext, 'Downloads:') === 0) {
-            $projects[$key]['downloads'] = str_replace('Downloads: ', '', $plain_text_obj2->innertext);
+            $projects[$key]['downloads'] = str_replace(',', '', str_replace('Downloads: ', '', $plain_text_obj2->innertext));
           }
         }
         $html_obj2->clear();
