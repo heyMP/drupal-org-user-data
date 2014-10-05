@@ -24,9 +24,6 @@ function drupal_org_user_data_drush_command() {
     'arguments' => array(
       'name' => dt('drupal.org username to pull data for.'),
     ),
-    'options' => array(
-      'rebuild' => dt('flushes current cache bins for drupal.org data'),
-    ),
     'bootstrap' => DRUSH_BOOTSTRAP_DRUPAL_FULL,
     'aliases' => array('doud'),
     'examples' => array(
@@ -57,10 +54,9 @@ function drush_drupal_org_user_data_drupal_org_load_user_data($name) {
     drush_log(dt('Drupal.org user name required'), 'error');
     return FALSE;
   }
-  // allow for forcibly rebuilding all cached drupal.org user data
-  if (drush_get_option('rebuild')) {
-    drupal_org_invalidate_cache();
-  }
+  // clear the cache bins for these two values so they are rebuilt
+  cache_clear_all(DRUPAL_ORG_USER_PATH . $name, 'cache_drupal_org_user_data');
+  cache_clear_all($name . '_project_array', 'cache_drupal_org_user_data');
   // Lets try things in a batch.
   _drupal_org_load_user_data_batch($name);
   $batch =& batch_get();

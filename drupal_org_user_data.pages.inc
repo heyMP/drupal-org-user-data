@@ -68,11 +68,15 @@ function drupal_org_user_data_rebuild_form() {
 function drupal_org_user_data_rebuild_form_validate($form, &$form_state) {
   // hit d.o. for data
   $name = $form_state['values']['username'];
-  cache_clear_all(DRUPAL_ORG_USER_PATH . $name, 'cache_drupal_org_user_data');
   $response = _drupal_org_user_data_request(DRUPAL_ORG_USER_PATH . $name);
-  $form_state['redirect'] = 'drupal_org_user_data/' . $name;
   if (isset($response->error)) {
     form_set_error('name', t('Drupal.org username does not exist!'));
+  }
+  else {
+    // user stored rendering and cached project array so it rebuilds
+    cache_clear_all(DRUPAL_ORG_USER_PATH . $name, 'cache_drupal_org_user_data');
+    cache_clear_all($name . '_project_array', 'cache_drupal_org_user_data');
+    $form_state['redirect'] = 'drupal_org_user_data/' . $name;
   }
 }
 
