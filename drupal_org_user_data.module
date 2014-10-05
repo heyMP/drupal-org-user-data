@@ -151,7 +151,7 @@ function _drupal_org_user_project_data($name = NULL, &$extra = array()) {
     foreach ($html_obj->find('dd ul li') as $plain_text_obj) {
       $tmp = $plain_text_obj->outertext;
       $split = explode('(', $tmp);
-      $commits = explode(' ', $split[1]);
+      $commits = explode(' ', array_pop($split));
       if (!empty($plain_text_obj->children(0)->innertext)) {
         $href = 'http://drupal.org' . $plain_text_obj->children(0)->href;
         $key = str_replace('http://drupal.org/project/', '', $href);
@@ -411,7 +411,7 @@ function _drupal_org_load_user_data_batch($name) {
     foreach ($html_obj->find('dd ul li') as $plain_text_obj) {
       $tmp = $plain_text_obj->outertext;
       $split = explode('(', $tmp);
-      $commits = explode(' ', $split[1]);
+      $commits = explode(' ', array_pop($split));
       if (!empty($plain_text_obj->children(0)->innertext)) {
         $href = 'http://drupal.org' . $plain_text_obj->children(0)->href;
         $key = str_replace('http://drupal.org/project/', '', $href);
